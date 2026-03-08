@@ -1,0 +1,502 @@
+/* Root Layout */
+html, body, #app {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #0d0d0d;
+}
+
+.ide-root {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #0d0d0d;
+    color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
+}
+
+/* Navbar & Menu */
+.navbar {
+    height: 60px;
+    background: #151515;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    border-bottom: 1px solid #222;
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+.nav-left {
+    display: flex;
+    gap: 5px;
+}
+
+.menu {
+    cursor: pointer;
+    font-size: 13px;
+    position: relative;
+    padding: 10px 15px;
+    color: #aaa;
+    transition: 0.2s;
+}
+
+.menu:hover {
+    background: #222;
+    color: #50C878;
+    font-weight: bold;       
+    transition: 0.1s;        
+}
+
+.drop {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: #1a1a1a;
+    min-width: 160px;
+    border: 1px solid #333;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    z-index: 100;
+}
+
+.menu:hover .drop {
+    display: block;
+}
+
+.drop p {
+    padding: 10px 15px;
+    margin: 0;
+    font-size: 12px;
+    border-bottom: 1px solid #222;
+    color: #ccc;
+    transition: 0.2s;
+}
+
+.drop p:hover {
+    background: #50C878;
+    color: #000;
+    font-weight: bold;        
+    padding-left: 20px;      
+    transition: 0.2s;
+}
+
+/* Rainbow Text Effect */
+.rainbow-text {
+    font-weight: bold;
+    background: linear-gradient(90deg, #ff0, #0f0, #0ff, #f0f, #ff0);
+    background-size: 400%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: flow 5s linear infinite;
+}
+
+@keyframes flow {
+    0% { background-position: 0%; }
+    100% { background-position: 100%; }
+}
+
+.version-box {
+    font-size: 11px;
+    color: #50C878;
+    background: #111;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid #222;
+}
+
+/* Main Workspace */
+.workspace {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+/* Sidebar & Explorer */
+.sidebar {
+    width: 250px;
+    background: #0d0d0d;
+    border-right: 1px solid #222;
+    display: flex;
+    flex-direction: column;
+}
+
+.stitle {
+    padding: 10px;
+    font-size: 11px;
+    color: #444;
+    border-bottom: 1px solid #222;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.tree-box {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    text-align: left;
+}
+
+.folder {
+    color: #ffd700;
+    cursor: pointer;
+    margin-bottom: 4px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.file {
+    color: #ccc;
+    cursor: pointer;
+    margin-bottom: 2px;
+    font-size: 13px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+.file:hover {
+    background: #222;
+    color: #50C878;
+    font-weight: bold;
+    padding-left: 8px;
+}
+
+/* Editor Area */
+.editor-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+}
+
+.tab-container {
+    display: flex;
+    background: #151515;
+    height: 35px;
+    border-bottom: 1px solid #222;
+    overflow-x: auto;
+}
+
+.tab {
+    padding: 0 15px;
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    border-right: 1px solid #222;
+    cursor: pointer;
+    background: #1a1a1a;
+    min-width: 120px;
+    justify-content: space-between;
+    color: #777;
+}
+
+.tab.active {
+    background: #1e1e1e;
+    border-bottom: 2px solid #50C878;
+    color: #50C878;
+}
+
+.tab-close {
+    margin-left: 10px;
+    color: #444;
+    font-size: 14px;
+}
+
+.tab-close:hover {
+    color: #ff4444;
+}
+
+/* Terminal Section */
+.terminal {
+    height: 200px;
+    background: #000;
+    border-top: 1px solid #222;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.term-header {
+    background: #151515;
+    padding: 5px 15px;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #555;
+}
+
+.term-body {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+    text-align: left;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+.log-line {
+    font-size: 12px;
+    color: #0f0;
+    margin-bottom: 4px;
+    white-space: pre-wrap;
+    line-height: 1.4;
+}
+
+.term-input-line {
+    display: flex;
+    align-items: center;
+    margin-top: 5px;
+}
+
+.prompt {
+    color: #50C878;
+    margin-right: 10px;
+    font-weight: bold;
+}
+
+.term-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-size: 12px;
+}
+
+/* Modals & Dialogs */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-dark, .wizard-card {
+    background: #1a1a1a;
+    padding: 25px;
+    border: 1px solid #333;
+    width: 500px;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+}
+
+.wizard-card {
+    width: 650px;
+}
+
+.about-card {
+    text-align: center;
+    border: 1px solid #50C878;
+}
+
+.about-content {
+    text-align: left;
+    padding: 15px;
+    background: #111;
+    border-radius: 6px;
+    margin: 15px 0;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.ide-input {
+    width: 100%;
+    padding: 12px;
+    background: #000;
+    border: 1px solid #333;
+    color: #0f0;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+    outline: none;
+    border-radius: 4px;
+}
+
+.ide-input:focus {
+    border-color: #50C878;
+}
+
+/* Buttons */
+button {
+    background: #333;
+    color: #eee;
+    border: none;
+    padding: 8px 15px;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 13px;
+    transition: 0.2s;
+}
+
+button:hover {
+    background: #444;
+}
+
+.btn-ok {
+    background: #50C878;
+    color: #000;
+    font-weight: bold;
+}
+
+.btn-ok:hover {
+    background: #45b36b;
+}
+
+.btn-ok:disabled {
+    background: #222;
+    color: #555;
+    cursor: not-allowed;
+}
+
+/* Setup Wizard Grid */
+.tool-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.tool-card {
+    background: #222;
+    padding: 15px;
+    border-radius: 4px;
+    border: 1px solid #333;
+}
+
+.inst-btn {
+    width: 100%;
+    background: #50C878;
+    color: #000;
+    border: none;
+    padding: 8px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+/* Custom Scrollbar for Dark UI */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #0d0d0d;
+}
+::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #50C878;
+}
+.modal-overlay {
+    animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-dark {
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+.tab.active {
+    background: #1e1e1e;
+    border-bottom: 2px solid #50C878;
+    color: #50C878;
+    box-shadow: inset 0 2px 10px rgba(80, 200, 120, 0.1); /* နည်းနည်းလေး ပိုလင်းစေတယ် */
+}
+/* --- ဒီအပိုင်းကို ထည့်ပေးပါ --- */
+.nav-center {
+    flex: 1;
+    text-align: center;
+    font-size: 24px;            /* စာလုံးအရွယ်အစား (ပိုကြီးချင်ရင် 28px/32px ပြောင်းပါ) */
+    font-weight: 800;          /* စာလုံးအထူဆုံးထားမယ် */
+    letter-spacing: 3px;       /* စာလုံးကြား အကွာအဝေး (ပိုခန့်သွားအောင်) */
+    text-transform: uppercase; /* အကုန်စာလုံးကြီးထားမယ် */
+    user-select: none;         /* Mouse နဲ့ ဆွဲရွေးလို့မရအောင် (UI ပိုပီသအောင်) */
+}
+
+/* Rainbow Effect ကိုပါ ပိုလင်းအောင် ဒီအတိုင်း ပြင်လိုက်ပါ */
+.rainbow-text {
+    background: linear-gradient(90deg, #ff0, #0f0, #0ff, #f0f, #ff0);
+    background-size: 200%;     /* Animation ပိုသိသာအောင် 200% ထားကြည့်ပါ */
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: flow 3s linear infinite; /* မြန်မြန်လေး စီးနေအောင် 3s ပြောင်းထားတယ် */
+    filter: drop-shadow(0 0 8px rgba(80, 200, 120, 0.3)); /* စာလုံးကို နည်းနည်း Glow ဖြစ်စေတယ် */
+}
+/* -------------------------- */
+/* --- Support Section (Updated for Dark Theme) --- */
+.support-container {
+    text-align: center;
+    padding: 15px;
+    background: #111;
+    border: 1px dashed #333;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.support-container p {
+    color: #50C878; /* Neon Green */
+    font-size: 13px;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.crypto-card {
+    display: inline-flex;
+    align-items: center;
+    background: #000; /* Darker background */
+    padding: 8px 12px;
+    border-radius: 5px;
+    border: 1px solid #333;
+    transition: 0.3s;
+}
+
+.crypto-card:hover {
+    border-color: #50C878; /* Hover ရင် လင်းလာမယ် */
+}
+
+#wallet-address {
+    font-size: 11px; /* Address က ရှည်လို့ နည်းနည်း သေးထားတာ ပိုလှတယ် */
+    color: #ccc;
+    margin-right: 12px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.copy-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #555;
+    font-size: 16px;
+    transition: 0.2s;
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.copy-btn:hover {
+    color: #50C878; /* အပြာအစား Neon Green ပြောင်းလိုက်တယ် */
+    transform: scale(1.1);
+}
+
+#copy-status {
+    /* React ထဲမှာ state နဲ့ သုံးမှာမို့ display: none မလိုတော့ပါဘူး */
+    font-size: 11px;
+    color: #50C878;
+    margin-top: 8px;
+    font-style: italic;
+}
