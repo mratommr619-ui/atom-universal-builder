@@ -7,3 +7,4 @@ wails.json
 package.json
 package-lock.json
 .github/
+*.tar.gz
