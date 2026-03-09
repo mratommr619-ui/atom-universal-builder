@@ -1,19 +1,23 @@
-# README
+# 🚀 ATOM Universal Builder v1.0.0
 
-## About
+The ultimate cross-platform IDE for Flutter development. Built with Wails, React, and Go.
 
-This is the official Wails React template.
+## 📥 Download Installers
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+Choose your platform below to download the latest version:
 
-## Live Development
+[![Download Windows](https://img.shields.io/badge/Windows-Setup.zip-blue?style=for-the-badge&logo=windows)](https://github.com/mratommr619-ui/atom-universal-builder/releases/download/v1.0.0/Atom.Builder.Windows.Setup.zip)
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+[![Download MacOS](https://img.shields.io/badge/MacOS-Installer.zip-000000?style=for-the-badge&logo=apple)](https://github.com/mratommr619-ui/atom-universal-builder/releases/download/v1.0.0/Atom.Builder.MacOS-Installer.zip)
 
-## Building
+[![Download Linux](https://img.shields.io/badge/Linux-Build.zip-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/mratommr619-ui/atom-universal-builder/releases/download/v1.0.0/Atom.Builder.Linux-Build.zip)
 
-To build a redistributable, production mode package, use `wails build`.
+---
+
+### 🛠 Quick Setup
+1. Download the zip for your OS.
+2. Extract the files.
+3. Run the executable to start building your Flutter apps!
+
+---
+*Developed by Mr. Atom*
