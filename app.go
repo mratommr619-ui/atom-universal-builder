@@ -60,39 +60,46 @@ func (a *App) startup(ctx context.Context) {
 
 // --- Terminal Core (Single Persistent Session) ---
 func (a *App) initTerminal() {
-	var shell string
-	var args []string
-	if runtime.GOOS == "windows" {
-		shell = "cmd.exe"
-		args = []string{"/K", "echo [ATOM SHELL READY]"}
-	} else {
-		shell = "sh"
-		args = []string{"-i"}
-	}
-	cmd := exec.Command(shell, args...)
+    var shell string
+    var args []string
+    
+    if runtime.GOOS == "windows" {
+        shell = "cmd.exe"
+        args = []string{"/K", "echo [ATOM SHELL READY]"}
+    } else {
+        shell = "sh"
+        args = []string{"-i"}
+    }
+    
+    cmd := exec.Command(shell, args...)
 
-	// စစ်ဆေးချက် - Windows ဖြစ်မှသာ HideWindow သုံးမယ်
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			HideWindow:    true,
-			CreationFlags: 0x08000000,
-		}
-	}
+    // --- Build Error Fix for Linux/macOS ---
+    // SysProcAttr ကို အရင်ဆောက်မယ်
+    attr := &syscall.SysProcAttr{}
+    
+    // Windows ဖြစ်မှသာ Windows-specific fields တွေကို platform-specific helper ကနေ တဆင့်ယူမယ်
+    // ဒါမှမဟုတ် အခုလို switch နဲ့ ခွဲပေးမှ compiler က error မပြမှာပါ
+    if runtime.GOOS == "windows" {
+        a.setupWindowsAttr(attr)
+    }
+    
+    cmd.SysProcAttr = attr
+    // ---------------------------------------
 
-	cmd.Env = os.Environ()
-	a.stdin, _ = cmd.StdinPipe()
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+    cmd.Env = os.Environ()
+    a.stdin, _ = cmd.StdinPipe()
+    stdout, _ := cmd.StdoutPipe()
+    stderr, _ := cmd.StderrPipe()
 
-	cmd.Start()
+    cmd.Start()
 
-	go func() {
-		reader := io.MultiReader(stdout, stderr)
-		scanner := bufio.NewScanner(reader)
-		for scanner.Scan() {
-			wailsRuntime.EventsEmit(a.ctx, "terminal_log", scanner.Text())
-		}
-	}()
+    go func() {
+        reader := io.MultiReader(stdout, stderr)
+        scanner := bufio.NewScanner(reader)
+        for scanner.Scan() {
+            wailsRuntime.EventsEmit(a.ctx, "terminal_log", scanner.Text())
+        }
+    }()
 }
 
 // --- ExecuteCommand Function ---
