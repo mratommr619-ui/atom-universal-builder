@@ -16,7 +16,6 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// Progress ကို တွက်ပေးဖို့အတွက် Custom WriteCounter
 type WriteCounter struct {
 	Total      uint64
 	Downloaded uint64
@@ -29,7 +28,6 @@ func (wc *WriteCounter) Write(p []byte) (int, error) {
 	wc.Downloaded += uint64(n)
 	if wc.Total > 0 {
 		percentage := float64(wc.Downloaded) / float64(wc.Total) * 100
-		// 1MB တိုင်းမှာ Progress လှမ်းပို့မယ်
 		if int(wc.Downloaded)%1048576 == 0 || wc.Downloaded == wc.Total {
 			msg := fmt.Sprintf(">> [DOWNLOADING] %s: %.2f%%", wc.fileName, percentage)
 			wailsRuntime.EventsEmit(wc.ctx, "terminal_log", msg)
@@ -73,12 +71,8 @@ func (a *App) initTerminal() {
     
     cmd := exec.Command(shell, args...)
 
-    // --- Build Error Fix for Linux/macOS ---
-    // SysProcAttr ကို အရင်ဆောက်မယ်
     attr := &syscall.SysProcAttr{}
     
-    // Windows ဖြစ်မှသာ Windows-specific fields တွေကို platform-specific helper ကနေ တဆင့်ယူမယ်
-    // ဒါမှမဟုတ် အခုလို switch နဲ့ ခွဲပေးမှ compiler က error မပြမှာပါ
     if runtime.GOOS == "windows" {
         a.setupWindowsAttr(attr)
     }

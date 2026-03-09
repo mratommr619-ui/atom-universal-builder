@@ -4,9 +4,7 @@ package main
 
 import "syscall"
 
-func getSysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{
-		HideWindow:    true,
-		CreationFlags: 0x08000000,
-	}
+func (a *App) setupWindowsAttr(attr *syscall.SysProcAttr) {
+	attr.HideWindow = true
+	attr.CreationFlags = 0x08000000
 }

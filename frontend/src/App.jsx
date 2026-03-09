@@ -73,7 +73,6 @@ function App() {
         // Terminal Log listener
         const offLog = EventsOn("terminal_log", m => setLogs(p => [...p, m]));
         
-        // 👇 TERMINAL CLEAR EVENT (Backend က လှမ်းခေါ်ရင် Log ရှင်းပေးမယ်)
         const offClear = EventsOn("terminal_clear", () => setLogs([]));
 
         return () => {

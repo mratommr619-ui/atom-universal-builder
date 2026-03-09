@@ -4,6 +4,6 @@ package main
 
 import "syscall"
 
-func getSysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{}
+func (a *App) setupWindowsAttr(attr *syscall.SysProcAttr) {
+	
 }
