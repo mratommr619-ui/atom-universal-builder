@@ -1,3 +1,9 @@
-build/bin
-node_modules
-frontend/dist
+
+*.go
+go.mod
+go.sum
+frontend/
+wails.json
+package.json
+package-lock.json
+.github/
