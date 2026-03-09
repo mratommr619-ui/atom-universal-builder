@@ -71,6 +71,7 @@ func (a *App) initTerminal() {
 	}
 	cmd := exec.Command(shell, args...)
 
+	// စစ်ဆေးချက် - Windows ဖြစ်မှသာ HideWindow သုံးမယ်
 	if runtime.GOOS == "windows" {
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			HideWindow:    true,
@@ -94,7 +95,7 @@ func (a *App) initTerminal() {
 	}()
 }
 
-// --- ExecuteCommand Function (Fix: Moved outside initTerminal) ---
+// --- ExecuteCommand Function ---
 func (a *App) ExecuteCommand(input string) {
 	if a.stdin != nil {
 		trimmedInput := strings.TrimSpace(input)
@@ -295,7 +296,6 @@ func (a *App) GetToolsByVersion() []map[string]string {
 	osType := runtime.GOOS
 	tools := []map[string]string{}
 
-	// --- 1. Flutter SDK (OS အလိုက် သီးသန့်ပြမည်) ---
 	if osType == "windows" {
 		tools = append(tools, map[string]string{"name": "Flutter Windows", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.0-stable.zip", "desc": "Flutter SDK for Windows", "filename": "flutter_win.zip"})
 	} else if osType == "darwin" {
@@ -304,7 +304,6 @@ func (a *App) GetToolsByVersion() []map[string]string {
 		tools = append(tools, map[string]string{"name": "Flutter Linux", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.0-stable.tar.xz", "desc": "Flutter SDK for Linux", "filename": "flutter_linux.tar.xz"})
 	}
 
-	// --- 2. OS Specific Desktop Tools ---
 	if osType == "darwin" {
 		tools = append(tools, map[string]string{"name": "Xcode (App Store)", "url": "https://apps.apple.com/us/app/xcode/id497799835", "desc": "Required for iOS & macOS Builds", "filename": "xcode_link.html"})
 		tools = append(tools, map[string]string{"name": "CocoaPods", "url": "https://guides.cocoapods.org/using/getting-started.html", "desc": "iOS Dependency Manager", "filename": "cocoapods_info.html"})
@@ -313,10 +312,8 @@ func (a *App) GetToolsByVersion() []map[string]string {
 		tools = append(tools, map[string]string{"name": "Visual Studio Community", "url": "https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=17", "desc": "Required for Windows Apps", "filename": "vs_community.exe"})
 	}
 
-	// --- 3. Browsers & Common Tools ---
 	tools = append(tools, map[string]string{"name": "Google Chrome", "url": "https://www.google.com/chrome/", "desc": "Required for Web Debugging", "filename": "chrome_installer.exe"})
 
-	// --- 4. JDK 17 (OS အလိုက် Link ပြောင်းမည်) ---
 	jdk := map[string]string{"name": "JDK 17", "desc": "Java for Android Build"}
 	if osType == "windows" {
 		jdk["url"] = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jdk_x64_windows_hotspot_17.0.12_7.msi"
@@ -330,7 +327,6 @@ func (a *App) GetToolsByVersion() []map[string]string {
 	}
 	tools = append(tools, jdk)
 
-	// --- 5. Android Studio & Git (OS အလိုက် Installer ပြောင်းမည်) ---
 	as := map[string]string{"name": "Android Studio", "desc": "Android SDK Manager"}
 	git := map[string]string{"name": "Git", "desc": "Required for Flutter Packages"}
 
@@ -354,13 +350,12 @@ func (a *App) GetToolsByVersion() []map[string]string {
 
 func (a *App) DownloadAndRunTool(url string, filename string) {
 	go func() {
-		wailsRuntime.EventsEmit(a.ctx, "terminal_clear", true) 
+		wailsRuntime.EventsEmit(a.ctx, "terminal_clear", true)
 		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [START] Downloading "+filename)
 		home, _ := os.UserHomeDir()
 		downloadsPath := filepath.Join(home, "Downloads")
 		tmpPath := filepath.Join(downloadsPath, filename)
 
-		// 1. Download with Percentage
 		resp, err := http.Get(url)
 		if err != nil {
 			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [ERROR] Connection failed!")
@@ -374,17 +369,15 @@ func (a *App) DownloadAndRunTool(url string, filename string) {
 			return
 		}
 
-		// မင်းရဲ့ WriteCounter ကို ပြန်သုံးပြီး Percentage ပြမယ်
 		counter := &WriteCounter{
-			Total:      uint64(resp.ContentLength),
-			ctx:        a.ctx,
-			fileName:   filename,
+			Total:    uint64(resp.ContentLength),
+			ctx:      a.ctx,
+			fileName: filename,
 		}
 
-		// io.TeeReader သုံးပြီး download ဆွဲရင်း percentage ပါ ပို့ပေးမယ်
 		_, err = io.Copy(out, io.TeeReader(resp.Body, counter))
-		out.Close() // ဒေါင်းပြီးရင် ဖိုင်ကို ပိတ်မှ နောက်ကောင်တွေ အလုပ်လုပ်လို့ရမှာ
-		
+		out.Close()
+
 		if err != nil {
 			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [ERROR] Download interrupted!")
 			return
@@ -392,18 +385,23 @@ func (a *App) DownloadAndRunTool(url string, filename string) {
 
 		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [SUCCESS] Download Finished: "+filename)
 
-		// 2. Action Logic
 		ext := strings.ToLower(filepath.Ext(filename))
-		
+
 		if ext == ".zip" {
 			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [EXTRACTING] Unzipping, please wait...")
 			extractDir := filepath.Join(downloadsPath, strings.TrimSuffix(filename, ext))
 			os.MkdirAll(extractDir, 0755)
 
-			psCmd := fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", tmpPath, extractDir)
-			err := exec.Command("powershell", "-Command", psCmd).Run()
-			
-			if err != nil {
+			var unzipCmd *exec.Cmd
+			if runtime.GOOS == "windows" {
+				psCmd := fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", tmpPath, extractDir)
+				unzipCmd = exec.Command("powershell", "-Command", psCmd)
+			} else {
+				// Linux/Mac unzip
+				unzipCmd = exec.Command("unzip", "-o", tmpPath, "-d", extractDir)
+			}
+
+			if err := unzipCmd.Run(); err != nil {
 				wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [ERROR] Extraction failed!")
 			} else {
 				wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [FINISHED] Extracted to folder.")
@@ -411,16 +409,17 @@ func (a *App) DownloadAndRunTool(url string, filename string) {
 			}
 		} else {
 			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [LAUNCHING] Installer Page opened. Please finish the setup...")
-			
+
 			var cmd *exec.Cmd
 			if runtime.GOOS == "windows" {
-				// cmd /c start /wait သုံးရင် installer ပိတ်တဲ့အထိ စောင့်ပေးပါတယ်
 				cmd = exec.Command("cmd", "/c", "start", "/wait", "", tmpPath)
-			} else {
+			} else if runtime.GOOS == "darwin" {
 				cmd = exec.Command("open", "-W", tmpPath)
+			} else {
+				cmd = exec.Command("xdg-open", tmpPath)
 			}
 
-			err := cmd.Run() // Installer window ပိတ်တဲ့အထိ ဒီမှာ တန့်နေမှာပါ
+			err := cmd.Run()
 
 			if err != nil {
 				wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [INFO] Installer closed.")
