@@ -5,16 +5,38 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// Progress ကို တွက်ပေးဖို့အတွက် Custom WriteCounter
+type WriteCounter struct {
+	Total      uint64
+	Downloaded uint64
+	ctx        context.Context
+	fileName   string
+}
+
+func (wc *WriteCounter) Write(p []byte) (int, error) {
+	n := len(p)
+	wc.Downloaded += uint64(n)
+	if wc.Total > 0 {
+		percentage := float64(wc.Downloaded) / float64(wc.Total) * 100
+		// 1MB တိုင်းမှာ Progress လှမ်းပို့မယ်
+		if int(wc.Downloaded)%1048576 == 0 || wc.Downloaded == wc.Total {
+			msg := fmt.Sprintf(">> [DOWNLOADING] %s: %.2f%%", wc.fileName, percentage)
+			wailsRuntime.EventsEmit(wc.ctx, "terminal_log", msg)
+		}
+	}
+	return n, nil
+}
 
 type FileNode struct {
 	Name     string      `json:"name"`
@@ -26,7 +48,7 @@ type FileNode struct {
 type App struct {
 	ctx         context.Context
 	stdin       io.WriteCloser
-	projectPath string // လက်ရှိ အလုပ်လုပ်နေတဲ့ Folder လမ်းကြောင်းကို မှတ်ထားဖို့
+	projectPath string
 }
 
 func NewApp() *App { return &App{} }
@@ -36,20 +58,27 @@ func (a *App) startup(ctx context.Context) {
 	a.initTerminal()
 }
 
+// --- Terminal Core (Single Persistent Session) ---
 func (a *App) initTerminal() {
 	var shell string
 	var args []string
 	if runtime.GOOS == "windows" {
 		shell = "cmd.exe"
-		// /K သုံးပြီး Prompt ကို အမြဲရှင်သန်နေအောင် လုပ်ထားတယ်
 		args = []string{"/K", "echo [ATOM SHELL READY]"}
 	} else {
 		shell = "sh"
 		args = []string{"-i"}
 	}
 	cmd := exec.Command(shell, args...)
-	cmd.Env = os.Environ()
 
+	if runtime.GOOS == "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			HideWindow:    true,
+			CreationFlags: 0x08000000,
+		}
+	}
+
+	cmd.Env = os.Environ()
 	a.stdin, _ = cmd.StdinPipe()
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
@@ -65,48 +94,39 @@ func (a *App) initTerminal() {
 	}()
 }
 
-func (a *App) GetFlutterVersion() (string, error) {
-	cmd := exec.Command("flutter", "--version")
-	out, err := cmd.Output()
-	if err != nil {
-		return "Flutter Unknown", nil
-	}
-	return string(out), nil
-}
-
-// Terminal Command ပို့တဲ့နေရာမှာ ပိုပြီး အဆင်ပြေအောင် ပြင်ထားတယ်
+// --- ExecuteCommand Function (Fix: Moved outside initTerminal) ---
 func (a *App) ExecuteCommand(input string) {
 	if a.stdin != nil {
-		inputLower := strings.ToLower(strings.TrimSpace(input))
-		
-		// CD command ရိုက်ရင် အထဲရောက်မရောက် သိသာအောင် list command ပါ တွဲပို့ပေးမယ်
+		trimmedInput := strings.TrimSpace(input)
+		inputLower := strings.ToLower(trimmedInput)
+
 		if strings.HasPrefix(inputLower, "cd ") {
-			var autoList string
+			targetPath := strings.TrimSpace(input[3:])
+			var fullCmd string
 			if runtime.GOOS == "windows" {
-				autoList = " & dir /w"
+				fullCmd = fmt.Sprintf("cd /d \"%s\" & dir /w\n", targetPath)
 			} else {
-				autoList = " && ls"
+				fullCmd = fmt.Sprintf("cd \"%s\" && ls\n", targetPath)
 			}
-			io.WriteString(a.stdin, input + autoList + "\n")
+			io.WriteString(a.stdin, fullCmd)
 		} else {
-			io.WriteString(a.stdin, input + "\n")
+			io.WriteString(a.stdin, input+"\n")
 		}
 	}
 }
 
-// --- EXPLORER & TERMINAL PATH SYNC ---
+// --- File & Project Operations ---
 
 func (a *App) OpenFolder() (*FileNode, error) {
 	path, _ := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{Title: "Open Project Folder"})
 	if path == "" {
 		return nil, nil
 	}
-	
-	a.projectPath = path // လမ်းကြောင်းအသစ်ကို သိမ်းမယ်
+
+	a.projectPath = path
 
 	if a.stdin != nil {
 		if runtime.GOOS == "windows" {
-			// /d switch သုံးမှ drive မတူတာတွေကိုပါ တစ်ခါတည်း ပြောင်းပေးမှာပါ
 			io.WriteString(a.stdin, fmt.Sprintf("cd /d \"%s\"\n", path))
 			io.WriteString(a.stdin, "echo Current Directory: %cd%\n")
 		} else {
@@ -114,12 +134,11 @@ func (a *App) OpenFolder() (*FileNode, error) {
 			io.WriteString(a.stdin, "echo Current Directory: $(pwd)\n")
 		}
 	}
-	
-	os.Chdir(path) 
+
+	os.Chdir(path)
 	return a.readDir(path), nil
 }
 
-// UI ကနေ Folder တစ်ခုခုကို Right-Click နှိပ်ပြီး ဝင်ချင်တဲ့အခါ သုံးဖို့
 func (a *App) CdIntoFolder(path string) {
 	if a.stdin != nil {
 		if runtime.GOOS == "windows" {
@@ -130,12 +149,12 @@ func (a *App) CdIntoFolder(path string) {
 	}
 }
 
-// --- EXPLORER CRUD OPERATIONS ---
-
 func (a *App) CreateNewFile(parentPath string, fileName string) error {
 	fullPath := filepath.Join(parentPath, fileName)
 	f, err := os.Create(fullPath)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	f.Close()
 	return nil
 }
@@ -155,8 +174,6 @@ func (a *App) RenameItem(oldPath string, newName string) error {
 	return os.Rename(oldPath, newPath)
 }
 
-// --- DIRECTORY READER ---
-
 func (a *App) readDir(path string) *FileNode {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -164,9 +181,8 @@ func (a *App) readDir(path string) *FileNode {
 	}
 	node := &FileNode{Name: filepath.Base(path), Path: path, IsDir: info.IsDir()}
 	if info.IsDir() {
-		files, _ := ioutil.ReadDir(path)
+		files, _ := os.ReadDir(path)
 		for _, f := range files {
-			// Hidden files နဲ့ build folder တွေကို ဖျောက်ထားမယ်
 			if f.Name()[0] == '.' || f.Name() == "build" || f.Name() == ".dart_tool" {
 				continue
 			}
@@ -194,116 +210,223 @@ func (a *App) SaveFile(path string, content string) error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+// --- Flutter Commands (Integrated) ---
+
+func (a *App) GetFlutterVersion() (string, error) {
+	cmd := exec.Command("flutter", "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		return "Flutter Unknown", nil
+	}
+	return string(out), nil
+}
+
 func (a *App) CreateProject(name string) {
 	go func() {
-		name = strings.ReplaceAll(name, " ", "_")
+		cleanName := strings.ToLower(strings.ReplaceAll(name, " ", "_"))
 		path, _ := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{Title: "Select Folder"})
-		if path != "" && name != "" {
-			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> Initializing Flutter Create: "+name)
-			var cmd *exec.Cmd
-			if runtime.GOOS == "windows" {
-				cmd = exec.Command("cmd", "/C", "flutter create "+name)
-			} else {
-				cmd = exec.Command("flutter", "create", name)
-			}
-			cmd.Dir = path
-			cmd.Run()
-			
-			projectPath := filepath.Join(path, name)
+
+		if path != "" && cleanName != "" {
+			a.CdIntoFolder(path)
+			a.ExecuteCommand("flutter create " + cleanName)
+
+			projectPath := filepath.Join(path, cleanName)
 			a.projectPath = projectPath
-			
-			if a.stdin != nil {
-				if runtime.GOOS == "windows" {
-					io.WriteString(a.stdin, fmt.Sprintf("cd /d \"%s\"\n", projectPath))
-				} else {
-					io.WriteString(a.stdin, fmt.Sprintf("cd \"%s\"\n", projectPath))
-				}
-				io.WriteString(a.stdin, "echo [SUCCESS] Project Created.\n")
-			}
+
+			a.CdIntoFolder(projectPath)
+			a.ExecuteCommand("echo [SUCCESS] Project Created: " + cleanName)
 		}
 	}()
 }
 
 func (a *App) RunDebug(path string, platform string) {
-	// Debug မလုပ်ခင် terminal ကို အဲ့ဒီ path ထဲအရင်သွင်းမယ်
 	a.CdIntoFolder(path)
 	a.ExecuteCommand("flutter run -d " + strings.ToLower(platform))
 }
 
+// --- SECURED RELEASE BUILD (Full Support) ---
 func (a *App) BuildPlatform(path string, platform string) {
 	go func() {
 		p := strings.ToLower(platform)
-		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> Building Release: "+p)
+		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [RELEASE] Building Secured: "+p)
 
-		var cmd *exec.Cmd
-		if p == "ios" {
-			cmd = exec.Command("flutter", "build", "ios", "--release", "--no-codesign")
-		} else {
-			cmd = exec.Command("flutter", "build", p, "--release")
-		}
+		debugInfoPath := filepath.Join(path, "build", "debug-info")
+		os.MkdirAll(debugInfoPath, 0755)
 
-		cmd.Dir = path
-		out, _ := cmd.CombinedOutput()
-		wailsRuntime.EventsEmit(a.ctx, "terminal_log", string(out))
-
-		var outPath string
+		var buildCmd string
 		switch p {
-		case "apk":
-			outPath = filepath.Join(path, "build", "app", "outputs", "flutter-apk")
-		case "appbundle":
-			outPath = filepath.Join(path, "build", "app", "outputs", "bundle", "release")
+		case "web":
+			buildCmd = "flutter build web --release --base-href=./"
 		case "ios":
-			outPath = filepath.Join(path, "build", "ios", "iphoneos")
+			buildCmd = fmt.Sprintf("flutter build ios --release --no-codesign --obfuscate --split-debug-info=\"%s\"", debugInfoPath)
+		case "apk":
+			buildCmd = fmt.Sprintf("flutter build apk --release --obfuscate --split-debug-info=\"%s\"", debugInfoPath)
+		case "appbundle":
+			buildCmd = fmt.Sprintf("flutter build appbundle --release --obfuscate --split-debug-info=\"%s\"", debugInfoPath)
 		case "windows":
-			outPath = filepath.Join(path, "build", "windows", "x64", "runner", "Release")
+			buildCmd = fmt.Sprintf("flutter build windows --release --obfuscate --split-debug-info=\"%s\"", debugInfoPath)
 		case "macos":
-			outPath = filepath.Join(path, "build", "macos", "Build", "Products", "Release")
+			buildCmd = fmt.Sprintf("flutter build macos --release --obfuscate --split-debug-info=\"%s\"", debugInfoPath)
 		case "linux":
-			outPath = filepath.Join(path, "build", "linux", "x64", "release", "bundle")
+			buildCmd = fmt.Sprintf("flutter build linux --release --obfuscate --split-debug-info=\"%s\"", debugInfoPath)
 		default:
-			outPath = filepath.Join(path, "build")
+			buildCmd = fmt.Sprintf("flutter build %s --release --obfuscate --split-debug-info=\"%s\"", p, debugInfoPath)
 		}
 
-		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [FINISH] Opening Folder: "+outPath)
-
-		if runtime.GOOS == "windows" {
-			exec.Command("explorer", outPath).Run()
-		} else if runtime.GOOS == "darwin" {
-			exec.Command("open", outPath).Run()
-		} else {
-			exec.Command("xdg-open", outPath).Run()
-		}
+		a.CdIntoFolder(path)
+		a.ExecuteCommand(buildCmd)
+		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> Build command sent to shell.")
 	}()
 }
 
-func (a *App) GetToolsByVersion() []map[string]string {
-	return []map[string]string{
-		{"name": "Flutter Win", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.0-stable.zip", "desc": "Win SDK", "filename": "flutter_win.zip"},
-		{"name": "Flutter Mac", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_3.24.0-stable.zip", "desc": "Mac SDK", "filename": "flutter_mac.zip"},
-		{"name": "Flutter Linux", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.0-stable.tar.xz", "desc": "Linux SDK", "filename": "flutter_linux.tar.xz"},
-		{"name": "JDK 17 (Win)", "url": "https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.exe", "desc": "Java 17 Win", "filename": "jdk_win.exe"},
-		{"name": "JDK 17 (Mac)", "url": "https://download.oracle.com/java/17/latest/jdk-17_macos-x64_bin.dmg", "desc": "Java 17 Mac", "filename": "jdk_mac.dmg"},
-		{"name": "JDK 17 (Linux)", "url": "https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz", "desc": "Java 17 Linux", "filename": "jdk_linux.tar.gz"},
+func (a *App) openDirectory(path string) {
+	if runtime.GOOS == "windows" {
+		exec.Command("explorer", path).Run()
+	} else if runtime.GOOS == "darwin" {
+		exec.Command("open", path).Run()
+	} else {
+		exec.Command("xdg-open", path).Run()
 	}
+}
+
+// --- Tools & Downloads ---
+
+func (a *App) GetToolsByVersion() []map[string]string {
+	osType := runtime.GOOS
+	tools := []map[string]string{}
+
+	// --- 1. Flutter SDK (OS အလိုက် သီးသန့်ပြမည်) ---
+	if osType == "windows" {
+		tools = append(tools, map[string]string{"name": "Flutter Windows", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.0-stable.zip", "desc": "Flutter SDK for Windows", "filename": "flutter_win.zip"})
+	} else if osType == "darwin" {
+		tools = append(tools, map[string]string{"name": "Flutter macOS (Apple Silicon)", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/macos/flutter_macos_arm64_3.24.0-stable.zip", "desc": "Flutter SDK for Mac (M1/M2/M3)", "filename": "flutter_mac_arm.zip"})
+	} else {
+		tools = append(tools, map[string]string{"name": "Flutter Linux", "url": "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.0-stable.tar.xz", "desc": "Flutter SDK for Linux", "filename": "flutter_linux.tar.xz"})
+	}
+
+	// --- 2. OS Specific Desktop Tools ---
+	if osType == "darwin" {
+		tools = append(tools, map[string]string{"name": "Xcode (App Store)", "url": "https://apps.apple.com/us/app/xcode/id497799835", "desc": "Required for iOS & macOS Builds", "filename": "xcode_link.html"})
+		tools = append(tools, map[string]string{"name": "CocoaPods", "url": "https://guides.cocoapods.org/using/getting-started.html", "desc": "iOS Dependency Manager", "filename": "cocoapods_info.html"})
+	}
+	if osType == "windows" {
+		tools = append(tools, map[string]string{"name": "Visual Studio Community", "url": "https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=Community&rel=17", "desc": "Required for Windows Apps", "filename": "vs_community.exe"})
+	}
+
+	// --- 3. Browsers & Common Tools ---
+	tools = append(tools, map[string]string{"name": "Google Chrome", "url": "https://www.google.com/chrome/", "desc": "Required for Web Debugging", "filename": "chrome_installer.exe"})
+
+	// --- 4. JDK 17 (OS အလိုက် Link ပြောင်းမည်) ---
+	jdk := map[string]string{"name": "JDK 17", "desc": "Java for Android Build"}
+	if osType == "windows" {
+		jdk["url"] = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jdk_x64_windows_hotspot_17.0.12_7.msi"
+		jdk["filename"] = "jdk_win.msi"
+	} else if osType == "darwin" {
+		jdk["url"] = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.12_7.pkg"
+		jdk["filename"] = "jdk_mac.pkg"
+	} else {
+		jdk["url"] = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jdk_x64_linux_hotspot_17.0.12_7.tar.gz"
+		jdk["filename"] = "jdk_linux.tar.gz"
+	}
+	tools = append(tools, jdk)
+
+	// --- 5. Android Studio & Git (OS အလိုက် Installer ပြောင်းမည်) ---
+	as := map[string]string{"name": "Android Studio", "desc": "Android SDK Manager"}
+	git := map[string]string{"name": "Git", "desc": "Required for Flutter Packages"}
+
+	if osType == "windows" {
+		as["url"] = "https://redirector.gvt1.com/edgedl/android/studio/install/2024.1.1.11/android-studio-2024.1.1.11-windows.exe"
+		as["filename"] = "android_studio.exe"
+		git["url"] = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/Git-2.44.0-64-bit.exe"
+		git["filename"] = "git_setup.exe"
+	} else if osType == "darwin" {
+		as["url"] = "https://redirector.gvt1.com/edgedl/android/studio/install/2024.1.1.11/android-studio-2024.1.1.11-mac_arm.dmg"
+		as["filename"] = "android_studio_mac.dmg"
+		git["url"] = "https://sourceforge.net/projects/git-osx-installer/files/git-2.33.0-intel-universal-mavericks.dmg/download"
+		git["filename"] = "git_mac.dmg"
+	}
+
+	tools = append(tools, as)
+	tools = append(tools, git)
+
+	return tools
 }
 
 func (a *App) DownloadAndRunTool(url string, filename string) {
 	go func() {
-		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> Downloading "+filename)
+		wailsRuntime.EventsEmit(a.ctx, "terminal_clear", true) 
+		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [START] Downloading "+filename)
 		home, _ := os.UserHomeDir()
-		tmpPath := filepath.Join(home, "Downloads", filename)
-		out, err := os.Create(tmpPath)
-		if err != nil { return }
+		downloadsPath := filepath.Join(home, "Downloads")
+		tmpPath := filepath.Join(downloadsPath, filename)
+
+		// 1. Download with Percentage
 		resp, err := http.Get(url)
-		if err != nil { return }
+		if err != nil {
+			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [ERROR] Connection failed!")
+			return
+		}
 		defer resp.Body.Close()
-		io.Copy(out, resp.Body)
-		out.Close()
-		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> Success: "+tmpPath)
-		if runtime.GOOS == "windows" {
-			exec.Command("explorer", "/select,", tmpPath).Run()
+
+		out, err := os.Create(tmpPath)
+		if err != nil {
+			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [ERROR] File creation failed!")
+			return
+		}
+
+		// မင်းရဲ့ WriteCounter ကို ပြန်သုံးပြီး Percentage ပြမယ်
+		counter := &WriteCounter{
+			Total:      uint64(resp.ContentLength),
+			ctx:        a.ctx,
+			fileName:   filename,
+		}
+
+		// io.TeeReader သုံးပြီး download ဆွဲရင်း percentage ပါ ပို့ပေးမယ်
+		_, err = io.Copy(out, io.TeeReader(resp.Body, counter))
+		out.Close() // ဒေါင်းပြီးရင် ဖိုင်ကို ပိတ်မှ နောက်ကောင်တွေ အလုပ်လုပ်လို့ရမှာ
+		
+		if err != nil {
+			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [ERROR] Download interrupted!")
+			return
+		}
+
+		wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [SUCCESS] Download Finished: "+filename)
+
+		// 2. Action Logic
+		ext := strings.ToLower(filepath.Ext(filename))
+		
+		if ext == ".zip" {
+			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [EXTRACTING] Unzipping, please wait...")
+			extractDir := filepath.Join(downloadsPath, strings.TrimSuffix(filename, ext))
+			os.MkdirAll(extractDir, 0755)
+
+			psCmd := fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", tmpPath, extractDir)
+			err := exec.Command("powershell", "-Command", psCmd).Run()
+			
+			if err != nil {
+				wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [ERROR] Extraction failed!")
+			} else {
+				wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [FINISHED] Extracted to folder.")
+				a.openDirectory(extractDir)
+			}
 		} else {
-			exec.Command("open", filepath.Dir(tmpPath)).Run()
+			wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [LAUNCHING] Installer Page opened. Please finish the setup...")
+			
+			var cmd *exec.Cmd
+			if runtime.GOOS == "windows" {
+				// cmd /c start /wait သုံးရင် installer ပိတ်တဲ့အထိ စောင့်ပေးပါတယ်
+				cmd = exec.Command("cmd", "/c", "start", "/wait", "", tmpPath)
+			} else {
+				cmd = exec.Command("open", "-W", tmpPath)
+			}
+
+			err := cmd.Run() // Installer window ပိတ်တဲ့အထိ ဒီမှာ တန့်နေမှာပါ
+
+			if err != nil {
+				wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [INFO] Installer closed.")
+			} else {
+				wailsRuntime.EventsEmit(a.ctx, "terminal_log", ">> [DONE] Installation for "+filename+" is completed!")
+			}
 		}
 	}()
 }

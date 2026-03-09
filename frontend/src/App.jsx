@@ -15,7 +15,8 @@ function App() {
     const [showCreate, setShowCreate] = useState(false);
     const [showAbout, setShowAbout] = useState(false);
     
-    // Context Menu State
+    // UI Dialog States
+    const [confirmAction, setConfirmAction] = useState({ show: false, type: "", path: "", name: "", newName: "" });
     const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, path: "", isDir: false });
 
     const [pName, setPName] = useState("");
@@ -24,12 +25,9 @@ function App() {
     const [logs, setLogs] = useState(["[SYSTEM] ATOM IDE READY"]);
     const [cmdInput, setCmdInput] = useState("");
     const logEndRef = useRef(null);
-
-    // Copy Status State
+    const tabContainerRef = useRef(null); 
     const [copyStatus, setCopyStatus] = useState(false);
-
-    // --- Drag and Drop State ---
-    const [draggedIdx, setDraggedIdx] = useState(null);
+    const [draggedTabIdx, setDraggedTabIdx] = useState(null);
 
     const platforms = ['apk', 'appbundle', 'ios', 'windows', 'macos', 'linux', 'web'];
 
@@ -41,7 +39,7 @@ function App() {
         });
     };
 
-    // Keyboard Shortcuts & Click Listeners
+    // Keyboard Shortcuts & Global Clicks
     useEffect(() => {
         const handleKeyDown = (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -59,20 +57,32 @@ function App() {
         };
     }, [activePath, openFiles]);
 
+    // Initial Load & Event Listeners
     useEffect(() => {
         if (API.GetFlutterVersion) {
             API.GetFlutterVersion().then(v => {
-                const ver = v.split('•')[0].replace('Flutter','').trim();
+                const match = v.match(/\d+\.\d+\.\d+/); 
+                const ver = match ? match[0] : v.split('•')[0].replace('Flutter','').trim();
                 setFVersion(ver);
             }).catch(() => setFVersion("N/A"));
         }
         if (API.GetToolsByVersion) {
             API.GetToolsByVersion().then(setTools);
         }
-        const off = EventsOn("terminal_log", m => setLogs(p => [...p, m]));
-        return () => off && off();
+
+        // Terminal Log listener
+        const offLog = EventsOn("terminal_log", m => setLogs(p => [...p, m]));
+        
+        // 👇 TERMINAL CLEAR EVENT (Backend က လှမ်းခေါ်ရင် Log ရှင်းပေးမယ်)
+        const offClear = EventsOn("terminal_clear", () => setLogs([]));
+
+        return () => {
+            if (offLog) offLog();
+            if (offClear) offClear();
+        };
     }, []);
 
+    // Auto Scroll Terminal
     useEffect(() => { 
         if (logEndRef.current) {
             logEndRef.current.scrollIntoView({ behavior: "smooth" }); 
@@ -86,6 +96,10 @@ function App() {
                 setExpandedFolders(prev => ({ ...prev, [node.path]: true })); 
             }
         });
+    };
+
+    const refreshExplorer = () => {
+        if (fileTree?.path) { handleOpenFolder(); }
     };
 
     const saveCurrentFile = () => {
@@ -106,27 +120,38 @@ function App() {
         } else { setActivePath(path); }
     };
 
+    const handleFileDropToEditor = (e) => {
+        e.preventDefault();
+        const data = e.dataTransfer.getData("fileData");
+        if (data) {
+            const { path, name, isDir } = JSON.parse(data);
+            if (!isDir) handleOpenFile(path, name);
+        }
+    };
+
+    // Tab Scroll Handler (Mouse Wheel)
+    const handleTabScroll = (e) => {
+        if (tabContainerRef.current) {
+            tabContainerRef.current.scrollLeft += e.deltaY;
+        }
+    };
+
     const onContextMenu = (e, path, isDir) => {
         e.preventDefault();
         e.stopPropagation();
-        setContextMenu({
-            show: true,
-            x: e.pageX,
-            y: e.pageY,
-            path: path,
-            isDir: isDir
-        });
+        const menuWidth = 160;
+        const menuHeight = isDir ? 160 : 100;
+        let x = e.pageX;
+        let y = e.pageY;
+        if (x + menuWidth > window.innerWidth) x -= menuWidth;
+        if (y + menuHeight > window.innerHeight) y -= menuHeight;
+        setContextMenu({ show: true, x, y, path, isDir });
     };
 
-    // --- Drag & Drop Functions ---
-    const onDragStart = (idx) => setDraggedIdx(idx);
-    const onDragOver = (e) => e.preventDefault();
-    const onDrop = (idx) => {
-        const newFiles = [...openFiles];
-        const item = newFiles.splice(draggedIdx, 1)[0];
-        newFiles.splice(idx, 0, item);
-        setOpenFiles(newFiles);
-        setDraggedIdx(null);
+    const triggerConfirm = (type, path) => {
+        const name = path.split(/[\\/]/).pop();
+        setConfirmAction({ show: true, type, path, name, newName: name });
+        setContextMenu(p => ({ ...p, show: false }));
     };
 
     const renderFileTree = (node) => {
@@ -134,6 +159,10 @@ function App() {
         return (
             <div key={node.path} style={{ marginLeft: '12px' }}>
                 <div className={node.isDir ? "folder" : "file"} 
+                     draggable={!node.isDir}
+                     onDragStart={(e) => {
+                         if(!node.isDir) e.dataTransfer.setData("fileData", JSON.stringify(node));
+                     }}
                      style={{ backgroundColor: activePath === node.path ? "#333" : "transparent" }}
                      onContextMenu={(e) => onContextMenu(e, node.path, node.isDir)}
                      onClick={() => node.isDir ? setExpandedFolders(p => ({...p, [node.path]: !p[node.path]})) : handleOpenFile(node.path, node.name)}>
@@ -163,7 +192,6 @@ function App() {
                             <p onClick={saveCurrentFile}>Save (Ctrl+S)</p>
                         </div>
                     </div>
-
                     <div className="menu">Debug 
                         <div className="drop">
                             {platforms.map(p => (
@@ -171,7 +199,6 @@ function App() {
                             ))}
                         </div>
                     </div>
-
                     <div className="menu">Build 
                         <div className="drop">
                             {platforms.map(p => (
@@ -179,7 +206,6 @@ function App() {
                             ))}
                         </div>
                     </div>
-
                     <div className="menu" onClick={() => setShowWizard(true)}>Setup Wizard</div>
                     <div className="menu" onClick={() => setShowAbout(true)}>About</div>
                 </div>
@@ -190,27 +216,59 @@ function App() {
             <div className="workspace">
                 <aside className="sidebar">
                     <div className="stitle">EXPLORER</div>
-                    <div className="tree-box" onContextMenu={(e) => fileTree && onContextMenu(e, fileTree.path, true)}>
+                    <div className="tree-box">
                         {fileTree ? renderFileTree(fileTree) : <p style={{color:'#444', padding:'10px', fontSize:'11px'}}>No Project Open</p>}
                     </div>
                 </aside>
-                <main className="editor-area">
-                    {/* Updated Tab Container with Horizontal Scroll */}
-                    <div className="tab-container" style={{ overflowX: 'auto', whiteSpace: 'nowrap', display: 'flex' }}>
+
+                <main className="editor-area" 
+                      onDragOver={(e) => e.preventDefault()} 
+                      onDrop={handleFileDropToEditor}>
+                    
+                    <div className="tab-container" 
+                         ref={tabContainerRef} 
+                         onWheel={handleTabScroll}
+                         style={{ 
+                            display: 'flex', 
+                            overflowX: 'auto', 
+                            overflowY: 'hidden',
+                            whiteSpace: 'nowrap', 
+                            width: '100%',
+                            minWidth: '0',
+                            height: '35px',
+                            background: '#252526',
+                            scrollbarWidth: 'none', 
+                            msOverflowStyle: 'none'
+                         }}>
                         {openFiles.map((f, i) => (
                             <div 
                                 key={f.path} 
                                 className={`tab ${activePath === f.path ? "active" : ""}`} 
                                 onClick={() => setActivePath(f.path)}
                                 draggable
-                                onDragStart={() => onDragStart(i)}
-                                onDragOver={onDragOver}
-                                onDrop={() => onDrop(i)}
-                                style={{ flexShrink: 0 }}
+                                onDragStart={() => setDraggedTabIdx(i)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                    e.stopPropagation();
+                                    const newFiles = [...openFiles];
+                                    const item = newFiles.splice(draggedTabIdx, 1)[0];
+                                    newFiles.splice(i, 0, item);
+                                    setOpenFiles(newFiles);
+                                }}
+                                style={{ 
+                                    flexShrink: 0, 
+                                    minWidth: '130px', 
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '0 10px',
+                                    cursor: 'pointer',
+                                    borderRight: '1px solid #1e1e1e',
+                                    userSelect: 'none'
+                                }}
                             >
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
+                                <span style={{ fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
                                 <span className="tab-close" 
-                                      style={{ fontSize: '18px', marginLeft: '15px', padding: '0 5px' }} 
                                       onClick={(e) => {
                                           e.stopPropagation();
                                           const n = openFiles.filter(of => of.path !== f.path);
@@ -220,8 +278,9 @@ function App() {
                             </div>
                         ))}
                     </div>
+
                     <Editor 
-                        height="100%" 
+                        height="calc(100% - 35px)" 
                         theme="vs-dark" 
                         language="dart" 
                         value={currentFile.content} 
@@ -236,47 +295,41 @@ function App() {
                     {logs.map((l, i) => <div key={i} className="log-line">{l}</div>)}
                     <div className="term-input-line">
                         <span className="prompt">$</span>
-                        <input 
-                            className="term-input" 
-                            value={cmdInput} 
-                            onChange={(e)=>setCmdInput(e.target.value)} 
-                            onKeyDown={(e)=>{
-                                if(e.key==='Enter' && cmdInput.trim() !== ""){
-                                    API.ExecuteCommand(cmdInput); 
-                                    setCmdInput("");
-                                }
-                            }} 
-                            autoFocus
-                        />
+                        <input className="term-input" value={cmdInput} onChange={(e)=>setCmdInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==='Enter' && cmdInput.trim() !== ""){ API.ExecuteCommand(cmdInput); setCmdInput(""); }}} />
                     </div>
                     <div ref={logEndRef} />
                 </div>
             </footer>
 
-            {/* Context Menu, Modals stay same as original... */}
             {contextMenu.show && (
-                <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+                <div className="context-menu floating-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
                     {contextMenu.isDir && (
                         <>
-                            <p onClick={() => {
-                                const name = prompt("File Name:");
-                                if(name) API.CreateNewFile(contextMenu.path, name).then(handleOpenFolder);
-                            }}>New File</p>
-                            <p onClick={() => {
-                                const name = prompt("Folder Name:");
-                                if(name) API.CreateNewFolder(contextMenu.path, name).then(handleOpenFolder);
-                            }}>New Folder</p>
+                            <p onClick={() => { const name = prompt("File Name:"); if(name) API.CreateNewFile(contextMenu.path, name).then(refreshExplorer); }}><i className="fas fa-file-plus"></i> New File</p>
+                            <p onClick={() => { const name = prompt("Folder Name:"); if(name) API.CreateNewFolder(contextMenu.path, name).then(refreshExplorer); }}><i className="fas fa-folder-plus"></i> New Folder</p>
+                            <div className="menu-divider"></div>
                         </>
                     )}
-                    <p onClick={() => {
-                        const newName = prompt("Rename to:", contextMenu.path.split(/[\\/]/).pop());
-                        if(newName) API.RenameItem(contextMenu.path, newName).then(handleOpenFolder);
-                    }}>Rename</p>
-                    <p className="danger" onClick={() => {
-                        if(window.confirm("Delete this item permanently?")) {
-                            API.DeleteItem(contextMenu.path).then(handleOpenFolder);
-                        }
-                    }}>Delete</p>
+                    <p onClick={() => triggerConfirm("rename", contextMenu.path)}><i className="fas fa-edit"></i> Rename</p>
+                    <p className="danger" onClick={() => triggerConfirm("delete", contextMenu.path)}><i className="fas fa-trash"></i> Delete</p>
+                </div>
+            )}
+
+            {confirmAction.show && (
+                <div className="modal-overlay">
+                    <div className="modal-dark dialog-box">
+                        <h3 className={confirmAction.type === 'delete' ? 'text-danger' : 'rainbow-text'}>{confirmAction.type.toUpperCase()}</h3>
+                        <p style={{margin: '15px 0', fontSize: '13px'}}>{confirmAction.type === 'delete' ? `Delete "${confirmAction.name}"?` : `Rename "${confirmAction.name}":`}</p>
+                        {confirmAction.type === 'rename' && <input className="ide-input" value={confirmAction.newName} onChange={(e) => setConfirmAction(p => ({...p, newName: e.target.value}))} autoFocus />}
+                        <div style={{marginTop: '20px', textAlign: 'right'}}>
+                            <button onClick={() => setConfirmAction({show:false})}>Cancel</button>
+                            <button className={confirmAction.type === 'delete' ? 'btn-danger' : 'btn-ok'} style={{marginLeft: '10px'}} onClick={() => {
+                                if(confirmAction.type === 'delete') { API.DeleteItem(confirmAction.path).then(refreshExplorer); setOpenFiles(prev => prev.filter(f => f.path !== confirmAction.path)); }
+                                else { API.RenameItem(confirmAction.path, confirmAction.newName).then(refreshExplorer); }
+                                setConfirmAction({show:false});
+                            }}>Confirm</button>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -284,27 +337,38 @@ function App() {
                 <div className="modal-overlay">
                     <div className="modal-dark">
                         <h3>New Project</h3>
-                        <input className="ide-input" value={pName} onChange={(e)=>setPName(e.target.value)} placeholder="Enter project name..."/>
-                        <button className="btn-ok" onClick={()=>{API.CreateProject(pName); setShowCreate(false);}}>Create</button>
-                        <button style={{marginLeft:'10px'}} onClick={()=>setShowCreate(false)}>Cancel</button>
+                        <input 
+                            className="ide-input" 
+                            value={pName} 
+                            onChange={(e) => setPName(e.target.value)} 
+                            placeholder="Project name..."
+                            autoFocus
+                        />
+                    <div className="modal-buttons">
+                    <button className="btn-ok" onClick={() => { API.CreateProject(pName); setShowCreate(false); }}>
+                    Create
+                    </button>
+                    <button className="btn-cancel" onClick={() => setShowCreate(false)}>
+                    Cancel
+                    </button>
+                    </div>
                     </div>
                 </div>
-            )}
+        )}
 
             {showWizard && (
                 <div className="modal-overlay">
-                    <div className="wizard-card">
+                    <div className="wizard-card" style={{ maxWidth: '800px', maxHeight: '80vh', overflowY: 'auto' }}>
                         <h3 className="rainbow-text">ATOM SETUP WIZARD</h3>
-                        <div className="tool-grid">
+                        <div className="tool-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px', padding: '10px' }}>
                             {tools.map((t, i) => (
-                                <div key={i} className="tool-card">
-                                    <div style={{fontWeight:'bold'}}>{t.name}</div>
-                                    <div style={{fontSize:'11px', color:'#888'}}>{t.desc}</div>
+                                <div key={i} className="tool-card" style={{ border: '1px solid #333', padding: '15px', borderRadius: '8px', background: '#1e1e1e' }}>
+                                    <div style={{fontWeight:'bold', marginBottom: '5px'}}>{t.name}</div>
                                     <button className="inst-btn" onClick={() => API.DownloadAndRunTool(t.url, t.filename)}>Download</button>
                                 </div>
                             ))}
                         </div>
-                        <button onClick={() => setShowWizard(false)}>Close Wizard</button>
+                        <button style={{display:'block', margin:'20px auto'}} onClick={() => setShowWizard(false)}>Close</button>
                     </div>
                 </div>
             )}
@@ -315,18 +379,12 @@ function App() {
                         <h2 className="rainbow-text">ATOM Universal Builder</h2>
                         <div className="about-content">
                             <p>Developed by: <b>Mr. Atom</b></p>
-                            <p>Professional Flutter Universal Builder IDE</p>
                             <p>Engine: Wails + React + Go</p>
-                            
+                            <p className="coffee">Please, Buy me a coffee if you don't mind.</p>
                             <div className="support-container" style={{textAlign:'center', marginTop:'20px'}}>
-                                <p>You can buy me a coffee! ☕ (BEP20)</p>
-                                <div className="crypto-card" style={{display:'inline-flex', alignItems:'center', background:'#222', padding:'10px', borderRadius:'5px', border:'1px solid #444'}}>
-                                    <span id="wallet-address" style={{fontSize:'12px', marginRight:'10px'}}>0x56824c51be35937da7E60a6223E82cD1795984cC</span>
-                                    <button onClick={copyAddress} className="copy-btn" style={{background:'none', border:'none', color:'#007bff', cursor:'pointer', fontSize:'16px'}}>
-                                        <i className="fas fa-copy"></i>
-                                    </button>
-                                </div>
-                                {copyStatus && <div style={{color:'green', fontSize:'11px', marginTop:'5px'}}>Copied to clipboard!</div>}
+                                <p>Wallet: 0x56824c51be35937da7E60a6223E82cD1795984cC</p>
+                                <button onClick={copyAddress} className="copy-btn"><i className="fas fa-copy"></i></button>
+                                {copyStatus && <div style={{color:'green', fontSize:'11px'}}>Copied!</div>}
                             </div>
                         </div>
                         <button className="btn-ok" style={{marginTop:'20px'}} onClick={()=>setShowAbout(false)}>Close</button>
